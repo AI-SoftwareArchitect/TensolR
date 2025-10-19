@@ -46,5 +46,7 @@ GLOBAL_GRAPH.backward(result)
 print("Graph nodes:", len(GLOBAL_GRAPH.nodes))
 ```
 
-“Tensolr, hesaplamayı bir sanat formuna dönüştüren minimalist bir tensor motoru.”
-— Doğukan
+
+> Tensolr, temel seviyede tensor ve graph kavramlarını anlamak için minimal bir deney ortamıdır.
+> — Doğukan
+
