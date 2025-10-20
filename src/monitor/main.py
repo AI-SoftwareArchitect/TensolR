@@ -44,17 +44,26 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
+        print(f"WebSocket client connected. Total connections: {len(self.active_connections)}")
     
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+        print(f"WebSocket client disconnected. Total connections: {len(self.active_connections)}")
     
     async def broadcast(self, data: Dict[str, Any]):
+        disconnected_clients = []
         for connection in self.active_connections:
             try:
                 await connection.send_text(json.dumps(data))
-            except:
-                # Remove disconnected client
-                self.disconnect(connection)
+            except Exception as e:
+                print(f"Error sending to client: {e}")
+                disconnected_clients.append(connection)
+        
+        # Remove disconnected clients
+        for client in disconnected_clients:
+            if client in self.active_connections:
+                self.active_connections.remove(client)
 
 
 manager = ConnectionManager()
@@ -91,6 +100,7 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             # Keep the connection alive
             data = await websocket.receive_text()
+            print(f"Received from WebSocket client: {data}")
             # We could implement commands from the client here if needed
     except WebSocketDisconnect:
         manager.disconnect(websocket)
@@ -120,17 +130,16 @@ def update_metrics_loop():
         cpu_percent = psutil.cpu_percent(interval=1)
         memory = psutil.virtual_memory()
         
-        # Update metrics
-        current_metrics = TensorMetrics(
-            timestamp=time.time(),
-            cpu_usage=cpu_percent,
-            memory_usage=memory.used,
-            memory_total=memory.total,
-            gpu_usage=0.0,  # Would implement actual GPU monitoring
-            gpu_memory=0.0,  # Would implement actual GPU monitoring
-            tensor_operations=tensor_operations_count,
-            active_tensors=active_tensors_count
-        )
+        # Update the existing current_metrics object instead of creating a new one
+        # This ensures that updates from API calls are preserved
+        current_metrics.timestamp = time.time()
+        current_metrics.cpu_usage = cpu_percent
+        current_metrics.memory_usage = memory.used
+        current_metrics.memory_total = memory.total
+        current_metrics.gpu_usage = 0.0  # Would implement actual GPU monitoring
+        current_metrics.gpu_memory = 0.0  # Would implement actual GPU monitoring
+        # Note: tensor_operations_count and active_tensors_count should be updated via API calls
+        # so we don't override them here
         
         # Store in history (keep last 1000 entries)
         metrics_history.append(current_metrics)
@@ -139,12 +148,6 @@ def update_metrics_loop():
         
         # Broadcast to all WebSocket clients
         asyncio.run(manager.broadcast(asdict(current_metrics)))
-        
-        # Update counts (in a real system, these would be updated by tensor operations)
-        # For simulation, just increment periodically
-        tensor_operations_count += 1
-        if tensor_operations_count % 5 == 0:
-            active_tensors_count = max(0, active_tensors_count + (1 if active_tensors_count < 20 else -1))
         
         time.sleep(1)  # Update every second
 
@@ -155,25 +158,101 @@ metrics_thread.start()
 
 
 # Additional endpoints for tensor-specific monitoring
+# Define Pydantic models for request bodies
+class TensorRegistration(BaseModel):
+    tensor_id: str
+    shape: List[int]
+    dtype: str
+
+class TensorRemoval(BaseModel):
+    tensor_id: str
+
+class TensorOperation(BaseModel):
+    op_type: str
+    duration: float = 0.0
+
+
+def get_current_system_metrics():
+    """Helper function to get up-to-date system metrics"""
+    cpu_percent = psutil.cpu_percent(interval=None)  # Non-blocking call
+    memory = psutil.virtual_memory()
+    
+    # For GPU, we'll use a placeholder since actual GPU monitoring might be slow
+    gpu_percent = 0.0
+    gpu_memory = 0.0
+    
+    try:
+        import GPUtil
+        gpus = GPUtil.getGPUs()
+        if gpus:
+            gpu = gpus[0]  # Use first GPU
+            gpu_percent = gpu.load * 100
+            gpu_memory = gpu.memoryUsed  # in MB
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    
+    return {
+        'cpu_usage': cpu_percent,
+        'memory_usage': memory.used,
+        'memory_total': memory.total,
+        'gpu_usage': gpu_percent,
+        'gpu_memory': gpu_memory
+    }
+
 @app.post("/api/tensor/register")
-async def register_tensor(tensor_id: str, shape: List[int], dtype: str):
+async def register_tensor(request: TensorRegistration):
     """Register a new tensor for monitoring"""
     global active_tensors_count
     active_tensors_count += 1
-    return {"message": f"Tensor {tensor_id} registered", "active_tensors": active_tensors_count}
+    # Get fresh system metrics and update the current metrics
+    sys_metrics = get_current_system_metrics()
+    current_metrics.active_tensors = active_tensors_count
+    current_metrics.cpu_usage = sys_metrics['cpu_usage']
+    current_metrics.memory_usage = sys_metrics['memory_usage']
+    current_metrics.memory_total = sys_metrics['memory_total']
+    current_metrics.gpu_usage = sys_metrics['gpu_usage']
+    current_metrics.gpu_memory = sys_metrics['gpu_memory']
+    current_metrics.timestamp = time.time()
+    # Broadcast the updated metrics to all connected clients
+    await manager.broadcast(asdict(current_metrics))
+    return {"message": f"Tensor {request.tensor_id} registered", "active_tensors": active_tensors_count}
 
 
 @app.post("/api/tensor/remove")
-async def remove_tensor(tensor_id: str):
+async def remove_tensor(request: TensorRemoval):
     """Remove a tensor from monitoring"""
     global active_tensors_count
     active_tensors_count = max(0, active_tensors_count - 1)
-    return {"message": f"Tensor {tensor_id} removed", "active_tensors": active_tensors_count}
+    # Get fresh system metrics and update the current metrics
+    sys_metrics = get_current_system_metrics()
+    current_metrics.active_tensors = active_tensors_count
+    current_metrics.cpu_usage = sys_metrics['cpu_usage']
+    current_metrics.memory_usage = sys_metrics['memory_usage']
+    current_metrics.memory_total = sys_metrics['memory_total']
+    current_metrics.gpu_usage = sys_metrics['gpu_usage']
+    current_metrics.gpu_memory = sys_metrics['gpu_memory']
+    current_metrics.timestamp = time.time()
+    # Broadcast the updated metrics to all connected clients
+    await manager.broadcast(asdict(current_metrics))
+    return {"message": f"Tensor {request.tensor_id} removed", "active_tensors": active_tensors_count}
 
 
 @app.post("/api/tensor/operation")
-async def tensor_operation(op_type: str, duration: float = 0.0):
+async def tensor_operation(request: TensorOperation):
     """Register a tensor operation"""
     global tensor_operations_count
     tensor_operations_count += 1
-    return {"message": f"Operation {op_type} registered", "total_operations": tensor_operations_count}
+    # Get fresh system metrics and update the current metrics
+    sys_metrics = get_current_system_metrics()
+    current_metrics.tensor_operations = tensor_operations_count
+    current_metrics.cpu_usage = sys_metrics['cpu_usage']
+    current_metrics.memory_usage = sys_metrics['memory_usage']
+    current_metrics.memory_total = sys_metrics['memory_total']
+    current_metrics.gpu_usage = sys_metrics['gpu_usage']
+    current_metrics.gpu_memory = sys_metrics['gpu_memory']
+    current_metrics.timestamp = time.time()
+    # Broadcast the updated metrics to all connected clients
+    await manager.broadcast(asdict(current_metrics))
+    return {"message": f"Operation {request.op_type} registered", "total_operations": tensor_operations_count}

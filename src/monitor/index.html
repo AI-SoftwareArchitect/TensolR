@@ -286,8 +286,15 @@
     </div>
 
     <script>
-        // WebSocket connection
-        const ws = new WebSocket('ws://localhost:8000/ws/metrics');
+        // WebSocket connection - dynamically determine port from current URL
+        const currentUrl = window.location.href;
+        const url = new URL(currentUrl);
+        const port = url.port || (url.protocol === 'https:' ? '443' : '80');
+        const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = wsProtocol + '//' + url.hostname + ':' + port + '/ws/metrics';
+        const ws = new WebSocket(wsUrl);
+        
+        console.log('Attempting to connect to:', wsUrl);  // Debug log
         
         // Chart instances
         let resourceChart, operationsChart, distributionChart;
@@ -422,17 +429,24 @@
                 console.log('Connected to monitoring server');
                 document.getElementById('connection-status').textContent = 'Connected';
                 document.getElementById('connection-status').style.color = '#4ade80';
+                document.getElementById('system-status').textContent = 'Live';
             };
             
             ws.onmessage = function(event) {
-                const data = JSON.parse(event.data);
-                updateMetrics(data);
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('Received metrics:', data);  // Debug log
+                    updateMetrics(data);
+                } catch (e) {
+                    console.error('Error parsing WebSocket message:', e, event.data);
+                }
             };
             
             ws.onclose = function(event) {
-                console.log('Disconnected from monitoring server');
+                console.log('Disconnected from monitoring server', event);
                 document.getElementById('connection-status').textContent = 'Disconnected';
                 document.getElementById('connection-status').style.color = '#f87171';
+                document.getElementById('system-status').textContent = 'Offline';
                 // Attempt to reconnect after 5 seconds
                 setTimeout(setupWebSocket, 5000);
             };
@@ -445,55 +459,75 @@
         }
         
         function updateMetrics(data) {
+            console.log('Updating metrics with data:', data);  // Debug log
             // Update metric cards
-            document.getElementById('cpu-value').textContent = data.cpu_usage.toFixed(1) + '%';
-            document.getElementById('cpu-progress').style.width = data.cpu_usage + '%';
-            
-            // Calculate RAM usage percentage
-            const ramPercent = (data.memory_usage / data.memory_total) * 100;
-            const ramGB = (data.memory_usage / (1024**3)).toFixed(2);
-            const totalGB = (data.memory_total / (1024**3)).toFixed(2);
-            document.getElementById('ram-value').textContent = ramGB + ' GB';
-            document.getElementById('ram-progress').style.width = ramPercent + '%';
-            document.getElementById('ram-total').textContent = totalGB + ' GB Total';
-            
-            document.getElementById('gpu-value').textContent = data.gpu_usage.toFixed(1) + '%';
-            document.getElementById('gpu-progress').style.width = data.gpu_usage + '%';
-            
-            document.getElementById('tensors-value').textContent = data.active_tensors;
-            document.getElementById('operations-count').textContent = data.tensor_operations + ' Operations';
-            
-            // Update timestamp
-            const date = new Date(data.timestamp * 1000);
-            document.getElementById('last-update').textContent = date.toLocaleTimeString();
-            
-            // Add data to arrays for charting
-            const timeLabel = date.toLocaleTimeString();
-            timestamps.push(timeLabel);
-            cpuData.push(data.cpu_usage);
-            ramData.push(ramPercent); // Using percentage for consistency
-            gpuData.push(data.gpu_usage);
-            tensorOpsData.push(data.tensor_operations);
-            
-            // Limit to 20 data points
-            if (timestamps.length > 20) {
-                timestamps.shift();
-                cpuData.shift();
-                ramData.shift();
-                gpuData.shift();
-                tensorOpsData.shift();
+            if (data.cpu_usage !== undefined) {
+                document.getElementById('cpu-value').textContent = data.cpu_usage.toFixed(1) + '%';
+                document.getElementById('cpu-progress').style.width = data.cpu_usage + '%';
             }
             
-            // Update charts
-            resourceChart.update();
+            // Calculate RAM usage percentage
+            if (data.memory_usage !== undefined && data.memory_total !== undefined) {
+                const ramPercent = (data.memory_usage / data.memory_total) * 100;
+                const ramGB = (data.memory_usage / (1024**3)).toFixed(2);
+                const totalGB = (data.memory_total / (1024**3)).toFixed(2);
+                document.getElementById('ram-value').textContent = ramGB + ' GB';
+                document.getElementById('ram-progress').style.width = ramPercent + '%';
+                document.getElementById('ram-total').textContent = totalGB + ' GB Total';
+            }
             
-            // Update operations chart
-            operationsChart.data.datasets[0].data = [data.tensor_operations, data.active_tensors];
-            operationsChart.update();
+            if (data.gpu_usage !== undefined) {
+                document.getElementById('gpu-value').textContent = data.gpu_usage.toFixed(1) + '%';
+                document.getElementById('gpu-progress').style.width = data.gpu_usage + '%';
+            }
             
-            // Update distribution chart
-            distributionChart.data.datasets[0].data = [data.cpu_usage, ramPercent, data.gpu_usage];
-            distributionChart.update();
+            if (data.active_tensors !== undefined) {
+                document.getElementById('tensors-value').textContent = data.active_tensors;
+            }
+            
+            if (data.tensor_operations !== undefined) {
+                document.getElementById('operations-count').textContent = data.tensor_operations + ' Operations';
+            }
+            
+            // Update timestamp
+            if (data.timestamp !== undefined) {
+                const date = new Date(data.timestamp * 1000);
+                document.getElementById('last-update').textContent = date.toLocaleTimeString();
+            }
+            
+            // Add data to arrays for charting
+            if (data.timestamp !== undefined) {
+                const date = new Date(data.timestamp * 1000);
+                const timeLabel = date.toLocaleTimeString();
+                timestamps.push(timeLabel);
+                
+                cpuData.push(data.cpu_usage || 0);
+                const ramPercent = data.memory_total ? (data.memory_usage / data.memory_total) * 100 : 0;
+                ramData.push(ramPercent);
+                gpuData.push(data.gpu_usage || 0);
+                tensorOpsData.push(data.tensor_operations || 0);
+                
+                // Limit to 20 data points
+                if (timestamps.length > 20) {
+                    timestamps.shift();
+                    cpuData.shift();
+                    ramData.shift();
+                    gpuData.shift();
+                    tensorOpsData.shift();
+                }
+                
+                // Update charts
+                resourceChart.update();
+                
+                // Update operations chart
+                operationsChart.data.datasets[0].data = [data.tensor_operations || 0, data.active_tensors || 0];
+                operationsChart.update();
+                
+                // Update distribution chart
+                const ramPercentForChart = data.memory_total ? (data.memory_usage / data.memory_total) * 100 : 0;
+                distributionChart.data.datasets[0].data = [data.cpu_usage || 0, ramPercentForChart, data.gpu_usage || 0];
+                distributionChart.update();
+            }
         }
         
         // Fetch initial data if WebSocket is not available

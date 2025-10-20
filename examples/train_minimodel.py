@@ -14,8 +14,22 @@ from src.tensor import Tensolr
 from src.api.nn import Linear, ReLU, Sequential, MSE
 from src.api.optim import SGD
 
+# Initialize monitoring if the server is running
+def initialize_monitoring():
+    try:
+        from src.monitor import init_monitoring
+        # Initialize with the correct server URL (port 8001 as in your example)
+        init_monitoring(server_url="http://localhost:8004")
+        print("Monitoring initialized")
+    except Exception as e:
+        print(f"Could not initialize monitoring: {e}. Continuing without monitoring...")
+
+
 def main():
     print("=== Tensolr Training Example ===")
+    
+    # Initialize monitoring (will only connect if monitoring server is running)
+    initialize_monitoring()
     
     # Generate synthetic data: y = 2*x + 1 + noise
     np.random.seed(42)

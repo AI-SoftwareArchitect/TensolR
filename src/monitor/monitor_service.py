@@ -151,7 +151,7 @@ class TensorMonitor:
 # Global monitor instance
 monitor = TensorMonitor()
 
-def init_monitoring(server_url: str = "http://localhost:8000"):
+def init_monitoring(server_url: str = "http://localhost:8001"):
     """Initialize the tensor monitoring service"""
     global monitor
     monitor = TensorMonitor(server_url)
