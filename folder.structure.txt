@@ -1,0 +1,21 @@
+mini-compiler/
+├─ src/
+│  ├─ tensor.py           # Tensor class (data + autograd)
+│  ├─ graph.py            # Compute Graph yapısı
+│  ├─ mlir_emitter.py     # Graph → MLIR IR
+│  ├─ passes/             # Opsiyonel (fusion, DCE vb.)
+│  │   ├─ fusion.py
+│  │   └─ dce.py
+│  ├─ runners/            # Backend çalıştırıcılar
+│  │   ├─ cpu_runner.py   # Numba / NumPy CPU
+│  │   └─ gpu_runner.py   # CuPy / Numba CUDA
+│  └─ api/                # Kullanıcı dostu mini-framework
+│      ├─ nn.py           # Linear, Sequential, Module
+│      └─ optim.py        # SGD vb.
+├─ examples/              # Çalışan demo scriptleri
+│  ├─ hello_tensor.py
+│  └─ train_minimodel.py
+├─ benchmarks/            # Performans testleri
+├─ tests/                 # Unit testler
+├─ docs/                  # Proje dokümanı
+└─ setup.py / pyproject.toml

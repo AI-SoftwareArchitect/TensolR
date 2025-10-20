@@ -82,3 +82,9 @@ def test_forward_transpose_backward():
     # transpose için grad geri çevrilir (T alınır)
     grad_a = GLOBAL_GRAPH.nodes[0].grad
     np.testing.assert_array_equal(grad_a, np.ones_like(a.data))
+
+@pytest.fixture(autouse=True)
+def reset_graph():
+    GLOBAL_GRAPH.nodes.clear()
+    yield
+    GLOBAL_GRAPH.nodes.clear()
