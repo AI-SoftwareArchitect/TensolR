@@ -6,6 +6,9 @@ Tensolr is a TensorFlow-like tensor framework with automatic differentiation, co
 
 ![ARCHITECTURE](docs/ARCHITECTURE.TensolR.png)
 
+![MONITOR-1](benchmarks/monitor-2.png)
+![MONITOR-2](benchmarks/monitor-1.png)
+
 ## Table of Contents
 - [Features](#features)
 - [Installation](#installation)
