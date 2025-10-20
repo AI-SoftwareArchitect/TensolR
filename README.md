@@ -2,6 +2,10 @@
 
 Tensolr is a TensorFlow-like tensor framework with automatic differentiation, computation graphs, and planned MLIR integration. It's designed for educational purposes and for those interested in understanding how deep learning frameworks work under the hood.
 
+## Architecture
+
+![ARCHITECTURE](docs/ARCHITECTURE.TensolR.png)
+
 ## Table of Contents
 - [Features](#features)
 - [Installation](#installation)
